@@ -86,7 +86,8 @@ public class LocalStorageManager {
                     long timestamp = Long.parseLong(parts[0]);
                     double lat = Double.parseDouble(parts[1]);
                     double lon = Double.parseDouble(parts[2]);
-                    mqttHandler.sendLocationTelemetry(lat, lon, MqttHandler.UBLOX_LOCATION);
+                    double speed = Double.parseDouble(parts[3]);
+                    mqttHandler.sendLocationTelemetry(lat, lon, speed, MqttHandler.UBLOX_LOCATION);
                 } catch (NumberFormatException e) {
                     Log.e(TAG, "Invalid log entry: " + entry);
                 }
