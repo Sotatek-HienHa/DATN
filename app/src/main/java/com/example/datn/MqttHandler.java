@@ -1,5 +1,6 @@
 package com.example.datn;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.util.Log;
 
@@ -22,8 +23,8 @@ import java.util.UUID;
 public class MqttHandler {
 
     private static final String TAG = "MqttHandler";
-    private final String serverUri = "tcp://demo.thingsboard.io:1883";
-    private final String deviceToken = "j91lb4oxo2s6iwj4k9br";
+    private final String serverUri = "tcp://116.111.116.185:1883";
+    private final String deviceToken = "wiOUYA7zDSSTDyaRNR53";
     private final String telemetryTopic = "v1/devices/me/telemetry";
     private final String attributeTopic = "v1/devices/me/attributes";
 
@@ -31,10 +32,10 @@ public class MqttHandler {
     private MqttConnectOptions mqttConnectOptions;
     private boolean isReconnecting = false;
 
-    public int maxTimeout;
-    public int maxDistance;
-    public boolean isGeofenceEnable;
-    public String province;
+    public int maxTimeout = 30000;
+    public int maxDistance = 10;
+    public boolean isGeofenceEnable = false;
+    public String province = "Hà Nội";
 
     public static final int DEVICE_LOCATION = 1;
     public static final int UBLOX_LOCATION = 2;
@@ -84,12 +85,21 @@ public class MqttHandler {
                         }
                         if (json.has("isGeofenceEnable")) {
                             isGeofenceEnable = json.getBoolean("isGeofenceEnable");
+                            if (isGeofenceEnable) {
+                                sendBoundaryAttribute(GetBoundary.getBoundaryForProvince(context, province));
+                            } else {
+                                sendBoundaryAttribute(null);
+                            }
                             Log.d(TAG, "Updated isGeofenceEnable: " + isGeofenceEnable);
                         }
                         if (json.has("provinces")) {
                             province = json.getString("provinces");
-                            sendBoundaryAttribute(GetBoundary.getBoundaryForProvince(context, province));
-                            Log.d("updateboundary", GetBoundary.getBoundaryForProvince(context, province).toString());
+                            if (isGeofenceEnable) {
+                                sendBoundaryAttribute(GetBoundary.getBoundaryForProvince(context, province));
+                                Log.d("update boundary", GetBoundary.getBoundaryForProvince(context, province).toString());
+                            } else {
+                                sendBoundaryAttribute(null);
+                            }
                             Log.d(TAG, "Updated province: " + province);
                         }
                     } catch (JSONException e) {
@@ -126,21 +136,22 @@ public class MqttHandler {
         }
     }
 
-    public void sendLocationTelemetry(double lat, double lon, int mode) {
+    @SuppressLint("DefaultLocale")
+    public void sendLocationTelemetry(double lat, double lon, double speed, int mode) {
         if (!mqttClient.isConnected()) {
             Log.w(TAG, "MQTT not connected. Trying to reconnect...");
             if (!isReconnecting) {
-                reconnect(() -> sendLocationTelemetry(lat, lon, mode));
+                reconnect(() -> sendLocationTelemetry(lat, lon, speed, mode));
             }
             return;
         }
         String payload;
         switch (mode) {
             case MqttHandler.DEVICE_LOCATION:
-                payload = String.format("{\"device latitude\": %.6f, \"device longitude\": %.6f}", lat, lon);
+                payload = String.format("{\"device latitude\": %.6f, \"device longitude\": %.6f, \"speed\": %.1f}", lat, lon, speed);
                 break;
             case MqttHandler.UBLOX_LOCATION:
-                payload = String.format("{\"latitude\": %.6f, \"longitude\": %.6f}", lat, lon);
+                payload = String.format("{\"latitude\": %.6f, \"longitude\": %.6f, \"speed\": %.6f}", lat, lon, speed);
                 break;
             default:
                 payload = "";
@@ -160,7 +171,7 @@ public class MqttHandler {
                 public void onFailure(IMqttToken asyncActionToken, Throwable exception) {
                     Log.e(TAG, "Publish failed: " + exception.getMessage());
                     if (exception.getMessage().contains("not connected") && !isReconnecting) {
-                        reconnect(() -> sendLocationTelemetry(lat, lon, mode));
+                        reconnect(() -> sendLocationTelemetry(lat, lon, speed, mode));
                     }
                 }
             });
@@ -169,17 +180,16 @@ public class MqttHandler {
         }
     }
 
-    public void sendOutsideTelemetry(boolean isOutside) {
+    public void sendDistacneTelemetry(float distance) {
         if (!mqttClient.isConnected()) {
             Log.w(TAG, "MQTT not connected. Trying to reconnect...");
             if (!isReconnecting) {
-                reconnect(() -> sendOutsideTelemetry(isOutside));
+                reconnect(() -> sendDistacneTelemetry(distance));
             }
             return;
         }
-
-        String payload = String.format("{\"isOutside\": %s}", isOutside);
-
+        String payload;
+        payload = String.format("{\"distance\": %.1f}", distance);
         MqttMessage message = new MqttMessage(payload.getBytes());
         message.setQos(1);
 
@@ -194,7 +204,7 @@ public class MqttHandler {
                 public void onFailure(IMqttToken asyncActionToken, Throwable exception) {
                     Log.e(TAG, "Publish failed: " + exception.getMessage());
                     if (exception.getMessage().contains("not connected") && !isReconnecting) {
-                        reconnect(() -> sendOutsideTelemetry(isOutside));
+                        reconnect(() -> sendDistacneTelemetry(distance));
                     }
                 }
             });
@@ -203,6 +213,108 @@ public class MqttHandler {
         }
     }
 
+    public void sendBatteryAttribute(int batteryLevel, boolean isCharging) {
+        if (!mqttClient.isConnected()) {
+            Log.w(TAG, "MQTT not connected. Trying to reconnect...");
+            if (!isReconnecting) {
+                reconnect(() -> sendBatteryAttribute(batteryLevel, isCharging));
+            }
+            return;
+        }
+        String payload = String.format("{\"battery_level\": %d, \"is_charging\": %s}", batteryLevel, isCharging);
+        MqttMessage message = new MqttMessage(payload.getBytes());
+        message.setQos(1);
+
+        try {
+            mqttClient.publish(attributeTopic, message, null, new IMqttActionListener() {
+                @Override
+                public void onSuccess(IMqttToken asyncActionToken) {
+                    Log.d(TAG, "Telemetry sent: " + payload);
+                }
+
+                @Override
+                public void onFailure(IMqttToken asyncActionToken, Throwable exception) {
+                    Log.e(TAG, "Publish failed: " + exception.getMessage());
+                    if (exception.getMessage().contains("not connected") && !isReconnecting) {
+                        reconnect(() -> sendBatteryAttribute(batteryLevel, isCharging));
+                    }
+                }
+            });
+        } catch (MqttException e) {
+            e.printStackTrace();
+        }
+    }
+
+
+    public void sendOutsideAttribute(boolean isOutside) {
+        if (!mqttClient.isConnected()) {
+
+            Log.w(TAG, "MQTT not connected. Trying to reconnect...");
+            if (!isReconnecting) {
+                reconnect(() -> sendOutsideAttribute(isOutside));
+            }
+            return;
+        }
+
+        String payload = String.format("{\"isOutside\": %s}", isOutside);
+
+        MqttMessage message = new MqttMessage(payload.getBytes());
+        message.setQos(1);
+
+        try {
+            mqttClient.publish(attributeTopic, message, null, new IMqttActionListener() {
+                @Override
+                public void onSuccess(IMqttToken asyncActionToken) {
+                    Log.d(TAG, "Telemetry sent: " + payload);
+                }
+
+                @Override
+                public void onFailure(IMqttToken asyncActionToken, Throwable exception) {
+                    Log.e(TAG, "Publish failed: " + exception.getMessage());
+                    if (exception.getMessage().contains("not connected") && !isReconnecting) {
+                        reconnect(() -> sendOutsideAttribute(isOutside));
+                    }
+                }
+            });
+        } catch (MqttException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void sendGpsStatusAttribute(boolean gpsStatus) {
+        if (!mqttClient.isConnected()) {
+            Log.w(TAG, "MQTT not connected. Trying to reconnect...");
+            if (!isReconnecting) {
+                reconnect(() -> sendGpsStatusAttribute(gpsStatus));
+            }
+            return;
+        }
+        String payload = String.format("{\"gps_status\": %s}", gpsStatus);
+
+        MqttMessage message = new MqttMessage(payload.getBytes());
+        message.setQos(1);
+
+        try {
+            mqttClient.publish(attributeTopic, message, null, new IMqttActionListener() {
+                @Override
+                public void onSuccess(IMqttToken asyncActionToken) {
+                    Log.d(TAG, "Telemetry sent: " + payload);
+                }
+
+                @Override
+                public void onFailure(IMqttToken asyncActionToken, Throwable exception) {
+                    Log.e(TAG, "Publish failed: " + exception.getMessage());
+                    if (exception.getMessage().contains("not connected") && !isReconnecting) {
+                        reconnect(() -> sendGpsStatusAttribute(gpsStatus));
+                    }
+                }
+            });
+        } catch (MqttException e) {
+            e.printStackTrace();
+        }
+    }
+
+    @SuppressLint("DefaultLocale")
     public void sendBoundaryAttribute(List<LatLng> provinceBoundary) {
         if (!mqttClient.isConnected()) {
             Log.w(TAG, "MQTT not connected. Trying to reconnect...");
@@ -215,16 +327,16 @@ public class MqttHandler {
         // Build payload dạng {"provinceBoundary":[[x1,y1],[x2,y2],...]}
         StringBuilder payloadBuilder = new StringBuilder();
         payloadBuilder.append("{\"provinceBoundary\":[");
-
-        for (int i = 0; i < provinceBoundary.size(); i++) {
-            LatLng point = provinceBoundary.get(i);
-            payloadBuilder.append(String.format("[%.6f,%.6f]", point.latitude, point.longitude));
-            if (i < provinceBoundary.size() - 1) {
-                payloadBuilder.append(",");
+        if (provinceBoundary != null) {
+            for (int i = 0; i < provinceBoundary.size(); i++) {
+                LatLng point = provinceBoundary.get(i);
+                payloadBuilder.append(String.format("[%.6f,%.6f]", point.latitude, point.longitude));
+                if (i < provinceBoundary.size() - 1) {
+                    payloadBuilder.append(",");
+                }
             }
         }
         payloadBuilder.append("]}");
-
         String payload = payloadBuilder.toString();
         MqttMessage message = new MqttMessage(payload.getBytes());
         message.setQos(1);
@@ -233,7 +345,7 @@ public class MqttHandler {
             mqttClient.publish(attributeTopic, message, null, new IMqttActionListener() {
                 @Override
                 public void onSuccess(IMqttToken asyncActionToken) {
-                    Log.d(TAG, "Attribute sent: " + payload);
+                    Log.d("attributesend", "Attribute sent: " + payload);
                 }
 
                 @Override
