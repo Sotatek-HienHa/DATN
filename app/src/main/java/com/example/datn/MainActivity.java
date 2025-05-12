@@ -98,8 +98,8 @@ public class MainActivity extends AppCompatActivity {
                 averageHandler.postDelayed(averageAndSendRunnable, maxTimeout);
             }
             updateAttributesHandler.postDelayed(this, 5000); // Kiểm tra mỗi 5 giây
-            getBatteryStatus();
-            mqttHandler.sendBatteryAttribute(batteryLevel, isCharging);
+//            getBatteryStatus();
+//            mqttHandler.sendBatteryAttribute(batteryLevel, isCharging);
         }
     };
 
@@ -134,13 +134,14 @@ public class MainActivity extends AppCompatActivity {
                 long timeDifference = (currentTimestamp - lastTimestamp) / 1000;
                 deviceLat += i;
                 deviceLon += i;
-                i+=0.00001f;
+                i+=0.0001f;
                 // mqttHandler.sendGpsStatusAttribute(true);
                 // mqttHandler.sendLocationTelemetry(deviceLat, deviceLon, 30.5f,MqttHandler.DEVICE_LOCATION);
                 if (lastSendDeviceLat != 0.0d && lastSendDeviceLon != 0.0d) {
                     double distance = LocationUtils.calculateDistance(deviceLat, deviceLon, lastSendDeviceLat, lastSendDeviceLon);
                     mqttHandler.sendDistacneTelemetry((float) distance);
                     speed = (float) (distance / timeDifference);
+                    // speed = speed < 5 ? 0 : speed;
                 }
                 if (!gpsStatus) {
                     mqttHandler.sendLocationTelemetry(deviceLat, deviceLon, speed,MqttHandler.DEVICE_LOCATION);

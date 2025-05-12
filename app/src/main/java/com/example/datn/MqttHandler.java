@@ -32,7 +32,7 @@ public class MqttHandler {
     private MqttConnectOptions mqttConnectOptions;
     private boolean isReconnecting = false;
 
-    public int maxTimeout = 30000;
+    public int maxTimeout = 3000;
     public int maxDistance = 10;
     public boolean isGeofenceEnable = false;
     public String province = "Hà Nội";
