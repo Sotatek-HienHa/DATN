@@ -23,7 +23,7 @@ import java.util.UUID;
 public class MqttHandler {
 
     private static final String TAG = "MqttHandler";
-    private final String serverUri = "tcp://116.111.116.185:1883";
+    private final String serverUri = "tcp://117.6.63.219:1883";
     private final String deviceToken = "wiOUYA7zDSSTDyaRNR53";
     private final String telemetryTopic = "v1/devices/me/telemetry";
     private final String attributeTopic = "v1/devices/me/attributes";

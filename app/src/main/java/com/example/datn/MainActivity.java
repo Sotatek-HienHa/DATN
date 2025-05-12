@@ -49,26 +49,27 @@ public class MainActivity extends AppCompatActivity {
     // Lưu tọa độ trung bình đã gửi gần nhất (dùng để so sánh thay đổi vị trí)
     private float lastSentAvgLat = -1.0f;
     private float lastSentAvgLon = -1.0f;
-
+    private long lastTimestamp = 0;
     private int maxTimeout = 300000;
     private int maxDistance = 10;
     private String province;
     private boolean isGeofenceEnable = false;
     private boolean isOutside = false;
     private boolean gpsStatus = false;
-    private boolean lastSentGpsStatus = false;
+    private boolean lastSentGpsStatus = true;
     private int batteryLevel = 0;
     private boolean isCharging = false;
     private float i = 0.01f;
     private double lastSendDeviceLat = 0.0d;
     private double lastSendDeviceLon = 0.0d;
+
     // Handler và Runnable để tính trung bình và gửi tọa độ sau mỗi 30 giây
     private final Handler averageHandler = new Handler(Looper.getMainLooper());
     private final Runnable averageAndSendRunnable = new Runnable() {
         @Override
         public void run() {
             Log.d("max timeout", String.valueOf(maxTimeout));
-            // flushBufferAndSendAverage();
+            flushBufferAndSendAverage();
             // Lên lịch chạy lại sau 30 giây
             averageHandler.postDelayed(this, maxTimeout);
         }
@@ -88,10 +89,10 @@ public class MainActivity extends AppCompatActivity {
                 isGeofenceEnable = mqttHandler.isGeofenceEnable;
                 Log.d("AttributesUpdate", "Updated maxTimeout: " + maxTimeout + ", maxDistance: " + maxDistance);
                 // Cập nhật yêu cầu định vị với các thông số mới
-//                if (ActivityCompat.checkSelfPermission(MainActivity.this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-//                    locationManager.removeUpdates(locationListener);
-//                    locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, maxTimeout, maxDistance, locationListener);
-//                }
+                if (ActivityCompat.checkSelfPermission(MainActivity.this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                    locationManager.removeUpdates(locationListener);
+                    locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, maxTimeout, maxDistance, locationListener);
+                }
                 // Cập nhật lại lịch gửi trung bình: huỷ và đăng lại với khoảng thời gian mới
                 averageHandler.removeCallbacks(averageAndSendRunnable);
                 averageHandler.postDelayed(averageAndSendRunnable, maxTimeout);
@@ -121,53 +122,61 @@ public class MainActivity extends AppCompatActivity {
         nmeaHandler = new NMEAHandler();
 
         // Thiết lập dịch vụ định vị của Android
-//        locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
-//        locationListener = new LocationListener() {
-//            @Override
-//            public void onLocationChanged(Location location) {
-//                getBatteryStatus();
-//                double deviceLat = location.getLatitude();
-//                double deviceLon = location.getLongitude();
-//                deviceLat += i;
-//                deviceLon += i;
-//                i+=0.00001f;
-//                mqttHandler.sendGpsStatusAttribute(true);
-//                mqttHandler.sendLocationTelemetry(deviceLat, deviceLon, 30.5f,MqttHandler.DEVICE_LOCATION);
-//                if (lastSendDeviceLat != 0.0d && lastSendDeviceLon != 0.0d) {
-//                    double distance = LocationUtils.calculateDistance(deviceLat, deviceLon, lastSendDeviceLat, lastSendDeviceLon);
-//                    mqttHandler.sendDistacneTelemetry((float) distance);
-//                }
-//                lastSendDeviceLat = deviceLat;
-//                lastSendDeviceLon = deviceLon;
-//
-//
-//                double finalDeviceLat = deviceLat;
-//                double finalDeviceLon = deviceLon;
-//                runOnUiThread(() -> {
-//                    txtDeviceCoordinates.setText(
-//                            String.format("Device Lat: %.6f\nDevice Lon: %.6f", finalDeviceLat, finalDeviceLon)
-//                    );
-//                });
-//                mqttHandler.sendOutsideAttribute(true);
-//                mqttHandler.sendBatteryAttribute(batteryLevel, isCharging);
-//            }
-//            @Override public void onStatusChanged(String provider, int status, Bundle extras) { }
-//            @Override public void onProviderEnabled(String provider) { }
-//            @Override public void onProviderDisabled(String provider) { }
-//        };
+        locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+        locationListener = new LocationListener() {
+            @Override
+            public void onLocationChanged(Location location) {
+                getBatteryStatus();
+                double deviceLat = location.getLatitude();
+                double deviceLon = location.getLongitude();
+                long currentTimestamp = System.currentTimeMillis();
+                float speed = 0.0f;
+                long timeDifference = (currentTimestamp - lastTimestamp) / 1000;
+                deviceLat += i;
+                deviceLon += i;
+                i+=0.00001f;
+                // mqttHandler.sendGpsStatusAttribute(true);
+                // mqttHandler.sendLocationTelemetry(deviceLat, deviceLon, 30.5f,MqttHandler.DEVICE_LOCATION);
+                if (lastSendDeviceLat != 0.0d && lastSendDeviceLon != 0.0d) {
+                    double distance = LocationUtils.calculateDistance(deviceLat, deviceLon, lastSendDeviceLat, lastSendDeviceLon);
+                    mqttHandler.sendDistacneTelemetry((float) distance);
+                    speed = (float) (distance / timeDifference);
+                }
+                if (!gpsStatus) {
+                    mqttHandler.sendLocationTelemetry(deviceLat, deviceLon, speed,MqttHandler.DEVICE_LOCATION);
+                }
+                lastSendDeviceLat = deviceLat;
+                lastSendDeviceLon = deviceLon;
+                lastTimestamp = currentTimestamp;
 
-//        // Yêu cầu cấp quyền định vị nếu chưa được cấp
-//        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-//                != PackageManager.PERMISSION_GRANTED) {
-//            ActivityCompat.requestPermissions(
-//                    this,
-//                    new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
-//                    LOCATION_PERMISSION_REQUEST_CODE
-//            );
-//        } else {
-//            startLocationUpdates();
-//            Log.d("test", "called");
-//        }
+
+                double finalDeviceLat = deviceLat;
+                double finalDeviceLon = deviceLon;
+                runOnUiThread(() -> {
+                    txtDeviceCoordinates.setText(
+                            String.format("Device Lat: %.6f\nDevice Lon: %.6f", finalDeviceLat, finalDeviceLon)
+                    );
+                });
+                // mqttHandler.sendOutsideAttribute(true);
+                mqttHandler.sendBatteryAttribute(batteryLevel, isCharging);
+            }
+            @Override public void onStatusChanged(String provider, int status, Bundle extras) { }
+            @Override public void onProviderEnabled(String provider) { }
+            @Override public void onProviderDisabled(String provider) { }
+        };
+
+        // Yêu cầu cấp quyền định vị nếu chưa được cấp
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+                != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(
+                    this,
+                    new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
+                    LOCATION_PERMISSION_REQUEST_CODE
+            );
+        } else {
+            startLocationUpdates();
+            Log.d("test", "called");
+        }
 
         // Tạo và phân tích cấu hình GNSS (bật tất cả hệ thống)
         GNSSControl gnssControl = new GNSSControl();
@@ -195,13 +204,13 @@ public class MainActivity extends AppCompatActivity {
         updateAttributesHandler.postDelayed(updateAttributesRunnable, 5000);
     }
 
-//    private void startLocationUpdates() {
-//        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-//                == PackageManager.PERMISSION_GRANTED) {
-//            // Yêu cầu cập nhật vị trí mỗi 5 giây hoặc khi di chuyển 10 mét
-//            locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, maxTimeout, maxDistance, locationListener);
-//        }
-//    }
+    private void startLocationUpdates() {
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+                == PackageManager.PERMISSION_GRANTED) {
+            // Yêu cầu cập nhật vị trí mỗi 5 giây hoặc khi di chuyển 10 mét
+            locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, maxTimeout, maxDistance, locationListener);
+        }
+    }
 
     // Phương thức tính trung bình và gửi tọa độ, sau đó cập nhật lastSentAvg
     private void flushBufferAndSendAverage() {
@@ -316,14 +325,14 @@ public class MainActivity extends AppCompatActivity {
         averageHandler.removeCallbacks(averageAndSendRunnable);
     }
 
-//    @Override
-//    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
-//        if (requestCode == LOCATION_PERMISSION_REQUEST_CODE &&
-//                grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-//            startLocationUpdates();
-//        }
-//        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-//    }
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        if (requestCode == LOCATION_PERMISSION_REQUEST_CODE &&
+                grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            startLocationUpdates();
+        }
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+    }
 
     private boolean isNetworkAvailable() {
         ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
