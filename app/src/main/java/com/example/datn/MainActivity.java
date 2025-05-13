@@ -145,6 +145,17 @@ public class MainActivity extends AppCompatActivity {
                 }
                 if (!gpsStatus) {
                     mqttHandler.sendLocationTelemetry(deviceLat, deviceLon, speed,MqttHandler.DEVICE_LOCATION);
+                    if (mqttHandler.isGeofenceEnable && province != null) {
+                        LatLng point = new LatLng(deviceLat, deviceLon);
+                        boolean isNowOutside = !GetBoundary.isPointInProvince(MainActivity.this, point, province);
+                        if (isNowOutside && !isOutside) {
+                            mqttHandler.sendOutsideAttribute(true);
+                            isOutside = true;
+                        } else if (!isNowOutside && isOutside) {
+                            mqttHandler.sendOutsideAttribute(false);
+                            isOutside = false;
+                        }
+                    }
                 }
                 lastSendDeviceLat = deviceLat;
                 lastSendDeviceLon = deviceLon;
