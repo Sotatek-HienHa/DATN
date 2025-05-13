@@ -91,15 +91,15 @@ public class MainActivity extends AppCompatActivity {
                 // Cập nhật yêu cầu định vị với các thông số mới
                 if (ActivityCompat.checkSelfPermission(MainActivity.this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
                     locationManager.removeUpdates(locationListener);
-                    locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, maxTimeout, maxDistance, locationListener);
+                    locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, maxTimeout, 0, locationListener);
                 }
                 // Cập nhật lại lịch gửi trung bình: huỷ và đăng lại với khoảng thời gian mới
                 averageHandler.removeCallbacks(averageAndSendRunnable);
                 averageHandler.postDelayed(averageAndSendRunnable, maxTimeout);
             }
             updateAttributesHandler.postDelayed(this, 5000); // Kiểm tra mỗi 5 giây
-            getBatteryStatus();
-            mqttHandler.sendBatteryAttribute(batteryLevel, isCharging);
+//            getBatteryStatus();
+//            mqttHandler.sendBatteryAttribute(batteryLevel, isCharging);
         }
     };
 
@@ -109,6 +109,7 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         mqttHandler = new MqttHandler(this);
+//        mqttHandler.sendInitDevice();
         localStorageManager = new LocalStorageManager(this);
 
         // Ánh xạ các TextView từ layout
@@ -134,16 +135,33 @@ public class MainActivity extends AppCompatActivity {
                 long timeDifference = (currentTimestamp - lastTimestamp) / 1000;
                 deviceLat += i;
                 deviceLon += i;
-                i+=0.00001f;
+                i+=0.01f;
                 // mqttHandler.sendGpsStatusAttribute(true);
                 // mqttHandler.sendLocationTelemetry(deviceLat, deviceLon, 30.5f,MqttHandler.DEVICE_LOCATION);
-                if (lastSendDeviceLat != 0.0d && lastSendDeviceLon != 0.0d) {
-                    double distance = LocationUtils.calculateDistance(deviceLat, deviceLon, lastSendDeviceLat, lastSendDeviceLon);
-                    mqttHandler.sendDistacneTelemetry((float) distance);
-                    speed = (float) (distance / timeDifference);
-                }
+//                if (lastSendDeviceLat != 0.0d && lastSendDeviceLon != 0.0d) {
+//                    double distance = LocationUtils.calculateDistance(deviceLat, deviceLon, lastSendDeviceLat, lastSendDeviceLon);
+//                    mqttHandler.sendDistacneTelemetry((float) distance);
+//                    speed = (float) (distance / timeDifference);
+//                }
                 if (!gpsStatus) {
+                    if (lastSendDeviceLat != 0.0d && lastSendDeviceLon != 0.0d) {
+                        double distance = LocationUtils.calculateDistance(deviceLat, deviceLon, lastSendDeviceLat, lastSendDeviceLon);
+                        mqttHandler.sendDistacneTelemetry((float) distance);
+                        speed = (float) (distance / timeDifference);
+                    }
                     mqttHandler.sendLocationTelemetry(deviceLat, deviceLon, speed,MqttHandler.DEVICE_LOCATION);
+                    if (mqttHandler.isGeofenceEnable && province != null) {
+                        LatLng point = new LatLng(deviceLat, deviceLon);
+                        boolean isNowOutside = !GetBoundary.isPointInProvince(MainActivity.this, point, province);
+                        Log.d("MqttHandler", String.valueOf(isNowOutside));
+                        if (isNowOutside && !isOutside) {
+                            mqttHandler.sendOutsideAttribute(true);
+                            isOutside = true;
+                        } else if (!isNowOutside && isOutside) {
+                            mqttHandler.sendOutsideAttribute(false);
+                            isOutside = false;
+                        }
+                    }
                 }
                 lastSendDeviceLat = deviceLat;
                 lastSendDeviceLon = deviceLon;
@@ -208,7 +226,7 @@ public class MainActivity extends AppCompatActivity {
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
                 == PackageManager.PERMISSION_GRANTED) {
             // Yêu cầu cập nhật vị trí mỗi 5 giây hoặc khi di chuyển 10 mét
-            locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, maxTimeout, maxDistance, locationListener);
+            locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, maxTimeout, 0, locationListener);
         }
     }
 
@@ -349,4 +367,5 @@ public class MainActivity extends AppCompatActivity {
 
         Log.d("BatteryStatus", "Battery Level: " + batteryLevel + "%, Charging: " + isCharging);
     }
+
 }

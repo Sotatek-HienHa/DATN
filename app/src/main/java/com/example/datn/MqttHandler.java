@@ -32,7 +32,7 @@ public class MqttHandler {
     private MqttConnectOptions mqttConnectOptions;
     private boolean isReconnecting = false;
 
-    public int maxTimeout = 30000;
+    public int maxTimeout = 10000;
     public int maxDistance = 10;
     public boolean isGeofenceEnable = false;
     public String province = "Hà Nội";
@@ -116,6 +116,7 @@ public class MqttHandler {
         });
 
         connect();
+        sendInitDevice();
     }
 
     public void connect() {
@@ -353,6 +354,40 @@ public class MqttHandler {
                     Log.e(TAG, "Publish attribute failed: " + exception.getMessage());
                     if (exception.getMessage().contains("not connected") && !isReconnecting) {
                         reconnect(() -> sendBoundaryAttribute(provinceBoundary));
+                    }
+                }
+            });
+        } catch (MqttException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void sendInitDevice() {
+        if (!mqttClient.isConnected()) {
+            Log.w(TAG, "MQTT not connected. Trying to reconnect...");
+            if (!isReconnecting) {
+                reconnect(() -> sendInitDevice());
+            }
+            return;
+        }
+        String payload = String.format("{\"isGeofenceEnable\": %b, \"max_distance\": %d, \"max_timeout\": %d, \"provinces\": \"%s\", " +
+                        "\"isOutside\": %b, \"provinceBoundary\": %s}",
+                isGeofenceEnable, maxDistance, maxTimeout, province, false, "[]");
+        MqttMessage message = new MqttMessage(payload.getBytes());
+        message.setQos(1);
+
+        try {
+            mqttClient.publish(attributeTopic, message, null, new IMqttActionListener() {
+                @Override
+                public void onSuccess(IMqttToken asyncActionToken) {
+                    Log.d("attributesend", "Attribute sent: " + payload);
+                }
+
+                @Override
+                public void onFailure(IMqttToken asyncActionToken, Throwable exception) {
+                    Log.e(TAG, "Publish attribute failed: " + exception.getMessage());
+                    if (exception.getMessage().contains("not connected") && !isReconnecting) {
+                        reconnect(() -> sendInitDevice());
                     }
                 }
             });
