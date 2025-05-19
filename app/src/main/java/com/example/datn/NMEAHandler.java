@@ -14,7 +14,7 @@ public class NMEAHandler {
         public float lon = 0.0f;
         public float dir = 0.0f;
         public float velocity = 0.0f;
-        public boolean legit = false;
+        public boolean hasGpsSignal = false;
     }
 
     GPSPosition position = new GPSPosition();
@@ -44,14 +44,13 @@ public class NMEAHandler {
             position.lon = ("0".equals(tokens[5]) || "0".equals(tokens[6])) ? 0.0f : Longitude2Decimal(tokens[5], tokens[6]);
             position.velocity = "0".equals(tokens[7]) ? 0.0f : Float.parseFloat(tokens[7]);
             position.dir = "0".equals(tokens[8]) ? 0.0f : Float.parseFloat(tokens[8]);
-            position.legit = "A".equals(tokens[2]);
+            position.hasGpsSignal = "A".equals(tokens[2]);
         }
     }
     class VTG implements SentenceParser {
         public void parse(String[] tokens, GPSPosition position) {
             position.dir = "0".equals(tokens[3]) ? 0.0f : Float.parseFloat(tokens[3]);
             position.velocity = "0".equals(tokens[5]) ? 0.0f : Float.parseFloat(tokens[5]);
-            position.legit = false;
         }
     }
     class GNS implements SentenceParser {
@@ -59,7 +58,7 @@ public class NMEAHandler {
             position.lat = ("0".equals(tokens[2]) || "0".equals(tokens[3])) ? 0.0f : Latitude2Decimal(tokens[2], tokens[3]);
             position.lon = ("0".equals(tokens[4]) || "0".equals(tokens[5])) ? 0.0f : Longitude2Decimal(tokens[4], tokens[5]);
             String mode = tokens[6];
-            position.legit = mode.matches(".*[ADEMS].*");
+            position.hasGpsSignal = mode.matches(".*[ADEMS].*");
         }
     }
     class GGA implements SentenceParser {
@@ -67,7 +66,7 @@ public class NMEAHandler {
             position.lat = ("0".equals(tokens[2]) || "0".equals(tokens[3])) ? 0.0f : Latitude2Decimal(tokens[2], tokens[3]);
             position.lon = ("0".equals(tokens[4]) || "0".equals(tokens[5])) ? 0.0f : Longitude2Decimal(tokens[4], tokens[5]);
             int fixQuality = tokens[6].isEmpty() ? 0 : Integer.parseInt(tokens[6]);
-            position.legit = fixQuality > 0;
+            position.hasGpsSignal = fixQuality > 0;
         }
     }
 
@@ -93,7 +92,7 @@ public class NMEAHandler {
                 }
                 i++;
             }
-            // TODO: kiểm tra CRC
+
             if (sentenceParsers.containsKey(type)) {
                 sentenceParsers.get(type).parse(tokens, position);
             }

@@ -47,15 +47,16 @@ public class MainActivity extends AppCompatActivity {
     private final List<float[]> gnssCoordinatesBuffer = Collections.synchronizedList(new ArrayList<>());
 
     // Lưu tọa độ trung bình đã gửi gần nhất (dùng để so sánh thay đổi vị trí)
-    private float lastSentAvgLat = -1.0f;
-    private float lastSentAvgLon = -1.0f;
+    private boolean isNetworkAvailable = false;
+    private float lastSentLat = -1.0f;
+    private float lastSentLon = -1.0f;
     private long lastTimestamp = 0;
     private int maxTimeout = 300000;
     private int maxDistance = 10;
     private String province;
     private boolean isGeofenceEnable = false;
     private boolean isOutside = false;
-    private boolean gpsStatus = false;
+    private GpsState gpsStatus = GpsState.NO_SIGNAL;
     private boolean lastSentGpsStatus = true;
     private int batteryLevel = 0;
     private boolean isCharging = false;
@@ -91,7 +92,8 @@ public class MainActivity extends AppCompatActivity {
                 // Cập nhật yêu cầu định vị với các thông số mới
                 if (ActivityCompat.checkSelfPermission(MainActivity.this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
                     locationManager.removeUpdates(locationListener);
-                    locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, maxTimeout, 0, locationListener);
+//                    locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, maxTimeout, 0, locationListener);
+                    locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, maxTimeout, 0, locationListener);
                 }
                 // Cập nhật lại lịch gửi trung bình: huỷ và đăng lại với khoảng thời gian mới
                 averageHandler.removeCallbacks(averageAndSendRunnable);
@@ -127,56 +129,7 @@ public class MainActivity extends AppCompatActivity {
         locationListener = new LocationListener() {
             @Override
             public void onLocationChanged(Location location) {
-                getBatteryStatus();
-                double deviceLat = location.getLatitude();
-                double deviceLon = location.getLongitude();
-                long currentTimestamp = System.currentTimeMillis();
-                float speed = 0.0f;
-                long timeDifference = (currentTimestamp - lastTimestamp) / 1000;
-                deviceLat += i;
-                deviceLon += i;
-                i+=0.01f;
-                // mqttHandler.sendGpsStatusAttribute(true);
-                // mqttHandler.sendLocationTelemetry(deviceLat, deviceLon, 30.5f,MqttHandler.DEVICE_LOCATION);
-//                if (lastSendDeviceLat != 0.0d && lastSendDeviceLon != 0.0d) {
-//                    double distance = LocationUtils.calculateDistance(deviceLat, deviceLon, lastSendDeviceLat, lastSendDeviceLon);
-//                    mqttHandler.sendDistacneTelemetry((float) distance);
-//                    speed = (float) (distance / timeDifference);
-//                }
-                if (!gpsStatus) {
-                    if (lastSendDeviceLat != 0.0d && lastSendDeviceLon != 0.0d) {
-                        double distance = LocationUtils.calculateDistance(deviceLat, deviceLon, lastSendDeviceLat, lastSendDeviceLon);
-                        mqttHandler.sendDistacneTelemetry((float) distance);
-                        speed = (float) (distance / timeDifference);
-                    }
-                    mqttHandler.sendLocationTelemetry(deviceLat, deviceLon, speed,MqttHandler.DEVICE_LOCATION);
-                    if (mqttHandler.isGeofenceEnable && province != null) {
-                        LatLng point = new LatLng(deviceLat, deviceLon);
-                        boolean isNowOutside = !GetBoundary.isPointInProvince(MainActivity.this, point, province);
-                        Log.d("MqttHandler", String.valueOf(isNowOutside));
-                        if (isNowOutside && !isOutside) {
-                            mqttHandler.sendOutsideAttribute(true);
-                            isOutside = true;
-                        } else if (!isNowOutside && isOutside) {
-                            mqttHandler.sendOutsideAttribute(false);
-                            isOutside = false;
-                        }
-                    }
-                }
-                lastSendDeviceLat = deviceLat;
-                lastSendDeviceLon = deviceLon;
-                lastTimestamp = currentTimestamp;
-
-
-                double finalDeviceLat = deviceLat;
-                double finalDeviceLon = deviceLon;
-                runOnUiThread(() -> {
-                    txtDeviceCoordinates.setText(
-                            String.format("Device Lat: %.6f\nDevice Lon: %.6f", finalDeviceLat, finalDeviceLon)
-                    );
-                });
-                // mqttHandler.sendOutsideAttribute(true);
-                mqttHandler.sendBatteryAttribute(batteryLevel, isCharging);
+                processNewLocation(location);
             }
             @Override public void onStatusChanged(String provider, int status, Bundle extras) { }
             @Override public void onProviderEnabled(String provider) { }
@@ -222,48 +175,94 @@ public class MainActivity extends AppCompatActivity {
         updateAttributesHandler.postDelayed(updateAttributesRunnable, 5000);
     }
 
+    private void processNewLocation(Location location) {
+        getBatteryStatus();
+        double deviceLat = location.getLatitude();
+        double deviceLon = location.getLongitude();
+        long currentTimestamp = System.currentTimeMillis();
+        float speed = 0.0f;
+        long timeDifference = (currentTimestamp - lastTimestamp) / 1000;
+        deviceLat += i;
+        deviceLon += i;
+        i+=0.01f;
+        // mqttHandler.sendGpsStatusAttribute(true);
+        // mqttHandler.sendLocationTelemetry(deviceLat, deviceLon, 30.5f,MqttHandler.DEVICE_LOCATION);
+//                if (lastSendDeviceLat != 0.0d && lastSendDeviceLon != 0.0d) {
+//                    double distance = LocationUtils.calculateDistance(deviceLat, deviceLon, lastSendDeviceLat, lastSendDeviceLon);
+//                    mqttHandler.sendDistacneTelemetry((float) distance);
+//                    speed = (float) (distance / timeDifference);
+//                }
+        if (gpsStatus != GpsState.UBLOX_GPS) {
+            if (gpsStatus != GpsState.DEVICE_GPS) {
+                gpsStatus = GpsState.DEVICE_GPS;
+                mqttHandler.sendGpsStatusAttribute(gpsStatus);
+            }
+            mqttHandler.sendGpsStatusAttribute(gpsStatus);
+            if (lastSendDeviceLat != 0.0d && lastSendDeviceLon != 0.0d) {
+                double distance = LocationUtils.calculateDistance(deviceLat, deviceLon, lastSendDeviceLat, lastSendDeviceLon);
+                mqttHandler.sendDistanceTelemetry((float) distance);
+                speed = (float) (distance / timeDifference);
+            }
+            mqttHandler.sendLocationTelemetry(deviceLat, deviceLon, speed,MqttHandler.DEVICE_LOCATION);
+            if (mqttHandler.isGeofenceEnable && province != null) {
+                LatLng point = new LatLng(deviceLat, deviceLon);
+                boolean isNowOutside = !GetBoundary.isPointInProvince(MainActivity.this, point, province);
+                Log.d("MqttHandler", String.valueOf(isNowOutside));
+                if (isNowOutside && !isOutside) {
+                    mqttHandler.sendOutsideAttribute(true);
+                    isOutside = true;
+                } else if (!isNowOutside && isOutside) {
+                    mqttHandler.sendOutsideAttribute(false);
+                    isOutside = false;
+                }
+            }
+        }
+        lastSendDeviceLat = deviceLat;
+        lastSendDeviceLon = deviceLon;
+        lastTimestamp = currentTimestamp;
+
+
+        double finalDeviceLat = deviceLat;
+        double finalDeviceLon = deviceLon;
+        runOnUiThread(() -> {
+            txtDeviceCoordinates.setText(
+                    String.format("Device Lat: %.6f\nDevice Lon: %.6f", finalDeviceLat, finalDeviceLon)
+            );
+        });
+        // mqttHandler.sendOutsideAttribute(true);
+        mqttHandler.sendBatteryAttribute(batteryLevel, isCharging);
+    }
+
     private void startLocationUpdates() {
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
                 == PackageManager.PERMISSION_GRANTED) {
             // Yêu cầu cập nhật vị trí mỗi 5 giây hoặc khi di chuyển 10 mét
-            locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, maxTimeout, 0, locationListener);
+//            locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, maxTimeout, 0, locationListener);
+            locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, maxTimeout, 0, locationListener);
         }
     }
 
     // Phương thức tính trung bình và gửi tọa độ, sau đó cập nhật lastSentAvg
     private void flushBufferAndSendAverage() {
-        float sumLat = 0.0f;
-        float sumLon = 0.0f;
-        float sumSpeed = 0.0f;
-        int count = 0;
-
-        synchronized (gnssCoordinatesBuffer) {
-            for (float[] coord : gnssCoordinatesBuffer) {
-                sumLat += coord[0];
-                sumLon += coord[1];
-                sumSpeed += coord[2];
-                count++;
-            }
-            gnssCoordinatesBuffer.clear();
-        }
-
         if (isNetworkAvailable()) {
-            if (gpsStatus != lastSentGpsStatus) {
-                mqttHandler.sendGpsStatusAttribute(gpsStatus);
-                lastSentGpsStatus = gpsStatus;
+//            if (gpsStatus != GpsState.UBLOX_GPS) {
+//                mqttHandler.sendGpsStatusAttribute(gps);
+//                lastSentGpsStatus = gpsStatus;
+//            }
+            if (!isNetworkAvailable) {
+                localStorageManager.syncLocationLogs(mqttHandler);
+                isNetworkAvailable = isNetworkAvailable();
             }
-            localStorageManager.syncLocationLogs(mqttHandler);
-            if (count > 0) {
-                float avgLat = sumLat / count;
-                float avgLon = sumLon / count;
-                float avgSpeed = sumSpeed / count;
-                float processedAvgSpeed = avgSpeed < 5 ? 0 : avgSpeed;
-                mqttHandler.sendLocationTelemetry(avgLat, avgLon, processedAvgSpeed, MqttHandler.UBLOX_LOCATION);
+            if (nmeaHandler.position.hasGpsSignal) {
+                float lat = nmeaHandler.position.lat;
+                float lon = nmeaHandler.position.lon;
+                float speed = nmeaHandler.position.velocity * 1.852f;
+                mqttHandler.sendLocationTelemetry(lat, lon, speed, MqttHandler.UBLOX_LOCATION);
                 runOnUiThread(() -> {
-                    txtCoordinates.setText(String.format("Avg Lat: %.6f\nAvg Lon: %.6f", avgLat, avgLon));
+                    txtCoordinates.setText(String.format("Avg Lat: %.6f\nAvg Lon: %.6f", lat, lon));
                 });
                 if (mqttHandler.isGeofenceEnable && province != null) {
-                    LatLng point = new LatLng(avgLat, avgLon);
+                    LatLng point = new LatLng(lat, lon);
                     boolean isNowOutside = !GetBoundary.isPointInProvince(this, point, province);
                     if (isNowOutside && !isOutside) {
                         mqttHandler.sendOutsideAttribute(true);
@@ -273,18 +272,20 @@ public class MainActivity extends AppCompatActivity {
                         isOutside = false;
                     }
                 }
-                lastSentAvgLat = avgLat;
-                lastSentAvgLon = avgLon;
-                Log.d("AverageTelemetry", "Processed averaged coordinates: " + avgLat + ", " + avgLon);
-                gpsStatus = true;
-            } else {
-                gpsStatus = false;
+                lastSentLat = lat;
+                lastSentLon = lon;
+                Log.d("AverageTelemetry", "Processed averaged coordinates: " + lat + ", " + lon);
+                if (gpsStatus != GpsState.UBLOX_GPS) {
+                    gpsStatus = GpsState.UBLOX_GPS;
+                    mqttHandler.sendGpsStatusAttribute(gpsStatus);
+                }
             }
         } else {
-            if (count > 0) {
-                float avgLat = sumLat / count;
-                float avgLon = sumLon / count;
-                localStorageManager.logLocationData(avgLat, avgLon, System.currentTimeMillis());
+            if (nmeaHandler.position.hasGpsSignal) {
+                float lat = nmeaHandler.position.lat;
+                float lon = nmeaHandler.position.lon;
+                localStorageManager.logLocationData(lat, lon, System.currentTimeMillis());
+                isNetworkAvailable = isNetworkAvailable();
             }
         }
     }
@@ -298,23 +299,19 @@ public class MainActivity extends AppCompatActivity {
                         String sentence = nmeaProcessor.processIncomingByte(b);
                         if (sentence != null) {
                             Log.d("sentence", sentence);
-                            NMEAHandler.GPSPosition pos = nmeaHandler.parse(sentence);
-                            Log.d("legit", String.valueOf(pos.legit));
-                            if (pos.legit) {
-                                float lat = pos.lat;
-                                float lon = pos.lon;
-                                float speed = pos.velocity * 1.852f;
-                                // Thêm tọa độ nhận được vào buffer
-                                gnssCoordinatesBuffer.add(new float[]{lat, lon, speed});
-
+                            nmeaHandler.parse(sentence);
+                            Log.d("hasGpsSignal", String.valueOf(nmeaHandler.position.hasGpsSignal));
+                            if (nmeaHandler.position.hasGpsSignal) {
+                                float lat = nmeaHandler.position.lat;
+                                float lon = nmeaHandler.position.lon;
                                 // Nếu đã có tọa độ trung bình được gửi trước đó thì kiểm tra sự thay đổi vị trí
-                                if (lastSentAvgLat >= 0 && lastSentAvgLon >= 0) {
+                                if (lastSentLat >= 0 && lastSentLon >= 0) {
                                     float[] results = new float[1];
-                                    Location.distanceBetween(lastSentAvgLat, lastSentAvgLon, lat, lon, results);
+                                    Location.distanceBetween(lastSentLat, lastSentLon, lat, lon, results);
                                     float distance = results[0];
-                                    mqttHandler.sendDistacneTelemetry(distance);
+                                    mqttHandler.sendDistanceTelemetry(distance);
                                     if (distance >= maxDistance) {
-                                        // Nếu thay đổi ≥10m, gửi ngay trung bình các tọa độ trong buffer
+                                        // Nếu thay đổi ≥ maxDistance, gửi ngay trung bình các tọa độ trong buffer
                                         flushBufferAndSendAverage();
                                     }
                                 }
